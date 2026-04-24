@@ -19,25 +19,27 @@ const formatoMoneda = new Intl.NumberFormat("es-CO", {
 
 export function VentasTable({ ventas }: VentasTableProps) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Fecha</TableHead>
-          <TableHead>Cliente</TableHead>
-          <TableHead>Total</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {ventas.map((venta) => (
-          <TableRow key={venta.id}>
-            <TableCell>
-              {new Date(venta.fecha).toLocaleDateString("es-CO")}
-            </TableCell>
-            <TableCell>{venta.clientes?.nombre ?? "-"}</TableCell>
-            <TableCell>{formatoMoneda.format(venta.total)}</TableCell>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50 hover:bg-slate-50">
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider">Fecha</TableHead>
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider">Cliente</TableHead>
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider text-right">Total</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {ventas.map((venta) => (
+            <TableRow key={venta.id} className="hover:bg-slate-50">
+              <TableCell className="text-slate-600">
+                {new Date(venta.fecha).toLocaleDateString("es-CO")}
+              </TableCell>
+              <TableCell className="text-slate-900 font-medium">{venta.clientes?.nombre ?? "-"}</TableCell>
+              <TableCell className="text-right font-semibold text-slate-900">{formatoMoneda.format(venta.total)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

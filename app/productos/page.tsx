@@ -1,9 +1,15 @@
+import Link from "next/link";
 import { ProductosTable } from "@/components/productos/ProductosTable";
 import { getInventario } from "@/lib/queries/inventario";
 import { getProductos } from "@/lib/queries/productos";
 import { AlertTriangle, CheckCircle, LayoutGrid, Plus } from "lucide-react";
 
-export default async function ProductosPage() {
+interface ProductosPageProps {
+  searchParams?: Promise<{ nuevo?: string }>;
+}
+
+export default async function ProductosPage({ searchParams }: ProductosPageProps) {
+  const params = searchParams ? await searchParams : undefined;
   const [productos, inventario] = await Promise.all([
     getProductos(),
     getInventario(),
@@ -13,6 +19,7 @@ export default async function ProductosPage() {
   const criticos = inventario.filter(
     (item) => item.stock_disponible < item.stock_minimo
   ).length;
+  const openCreateInitially = params?.nuevo === "1";
 
   return (
     <main className="ml-[260px] min-h-screen">
@@ -24,10 +31,13 @@ export default async function ProductosPage() {
               Catálogo de productos médicos disponibles
             </p>
           </div>
-          <button className="bg-[#90D5FF] hover:bg-[#7bc8f0] text-on-primary-container px-6 py-2.5 rounded-lg font-bold text-body-md flex items-center gap-2 shadow-sm transition-all active:scale-95">
-            <Plus className="text-[20px]" />
-            + Nuevo Producto
-          </button>
+          <Link
+            href="/productos?nuevo=1"
+            className="bg-[#6FBFEF] text-slate-900 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-[#90D5FF] hover:text-white active:scale-95 transition-all flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Nuevo Producto
+          </Link>
         </div>
 
         <div className="grid grid-cols-12 gap-6">
@@ -72,7 +82,11 @@ export default async function ProductosPage() {
           </div>
         </div>
 
-        <ProductosTable productos={productos} inventario={inventario} />
+        <ProductosTable
+          productos={productos}
+          inventario={inventario}
+          openCreateInitially={openCreateInitially}
+        />
 
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12 lg:col-span-8 bg-white p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] border border-slate-100">

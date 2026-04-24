@@ -28,31 +28,33 @@ function getTipoBadgeClass(tipo: Movimiento["tipo"]) {
 
 export function MovimientosTable({ movimientos }: MovimientosTableProps) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Fecha</TableHead>
-          <TableHead>Producto</TableHead>
-          <TableHead>Tipo</TableHead>
-          <TableHead>Cantidad</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {movimientos.map((movimiento) => (
-          <TableRow key={movimiento.id}>
-            <TableCell>
-              {new Date(movimiento.fecha).toLocaleDateString("es-CO")}
-            </TableCell>
-            <TableCell>{movimiento.producto_id ?? "-"}</TableCell>
-            <TableCell>
-              <Badge className={getTipoBadgeClass(movimiento.tipo)}>
-                {movimiento.tipo}
-              </Badge>
-            </TableCell>
-            <TableCell>{movimiento.cantidad}</TableCell>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50 hover:bg-slate-50">
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider">Fecha</TableHead>
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider">Producto</TableHead>
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider">Tipo</TableHead>
+            <TableHead className="text-slate-600 font-semibold text-label-bold uppercase tracking-wider text-right">Cantidad</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {movimientos.map((movimiento) => (
+            <TableRow key={movimiento.id} className="hover:bg-slate-50">
+              <TableCell className="text-slate-600">
+                {new Date(movimiento.fecha).toLocaleDateString("es-CO")}
+              </TableCell>
+              <TableCell className="text-slate-900 font-medium">{movimiento.productos?.nombre ?? movimiento.producto_id ?? "-"}</TableCell>
+              <TableCell>
+                <Badge className={getTipoBadgeClass(movimiento.tipo)}>
+                  {movimiento.tipo}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right font-semibold text-slate-900">{movimiento.cantidad}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

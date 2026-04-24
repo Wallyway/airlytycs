@@ -48,6 +48,7 @@ export interface Movimiento {
   fecha: string;
   cantidad: number;
   producto_id: string | null;
+  productos?: { nombre: string };
 }
 
 export interface DashboardKPIs {

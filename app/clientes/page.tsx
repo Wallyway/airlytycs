@@ -1,14 +1,21 @@
+import Link from "next/link";
 import { ClientesTable } from "@/components/clientes/ClientesTable";
 import { getClientes } from "@/lib/queries/clientes";
 import { Building2, Plus, User, Users } from "lucide-react";
 
-export default async function ClientesPage() {
+interface ClientesPageProps {
+  searchParams?: Promise<{ nuevo?: string }>;
+}
+
+export default async function ClientesPage({ searchParams }: ClientesPageProps) {
+  const params = searchParams ? await searchParams : undefined;
   const clientes = await getClientes();
   const total = clientes.length;
   const empresas = clientes.filter(
     (cliente) => (cliente.tipo ?? "").toLowerCase() !== "particular"
   ).length;
   const particulares = total - empresas;
+  const openCreateInitially = params?.nuevo === "1";
 
   return (
     <main className="ml-[260px] min-h-screen">
@@ -20,10 +27,13 @@ export default async function ClientesPage() {
               Gestión de clientes registrados
             </p>
           </div>
-          <button className="bg-[#90D5FF] text-white px-6 py-2.5 rounded-lg font-bold shadow-sm hover:brightness-105 active:scale-95 transition-all flex items-center gap-2">
+          <Link
+            href="/clientes?nuevo=1"
+            className="bg-[#6FBFEF] text-slate-900 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-[#90D5FF] hover:text-white active:scale-95 transition-all flex items-center gap-2"
+          >
             <Plus className="h-4 w-4" />
             Nuevo Cliente
-          </button>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -68,7 +78,10 @@ export default async function ClientesPage() {
           </div>
         </div>
 
-        <ClientesTable clientes={clientes} />
+        <ClientesTable
+          clientes={clientes}
+          openCreateInitially={openCreateInitially}
+        />
 
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 bg-white p-6 rounded-xl border border-slate-100 shadow-sm">

@@ -1,11 +1,24 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ChevronDown, Pencil, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import type { Cliente } from "@/types";
 
 interface ClientesTableProps {
   clientes: Cliente[];
+  openCreateInitially?: boolean;
 }
 
 type TipoFiltro = "todos" | "empresa" | "particular";
@@ -22,14 +35,155 @@ function getInitials(nombre: string) {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
 
-export function ClientesTable({ clientes }: ClientesTableProps) {
+interface ClienteFormState {
+  nombre: string;
+  telefono: string;
+  email: string;
+  direccion: string;
+  tipo: "empresa" | "particular";
+}
+
+const initialFormState: ClienteFormState = {
+  nombre: "",
+  telefono: "",
+  email: "",
+  direccion: "",
+  tipo: "empresa",
+};
+
+export function ClientesTable({
+  clientes,
+  openCreateInitially = false,
+}: ClientesTableProps) {
+  const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
+  const [rows, setRows] = useState<Cliente[]>(clientes);
   const [search, setSearch] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("todos");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formState, setFormState] = useState<ClienteFormState>(initialFormState);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRows(clientes);
+  }, [clientes]);
+
+  useEffect(() => {
+    if (!openCreateInitially) return;
+    setDialogMode("create");
+    setEditingId(null);
+    setFormState(initialFormState);
+    setErrorMessage(null);
+    setDialogOpen(true);
+  }, [openCreateInitially]);
+
+  function openEditDialog(cliente: Cliente) {
+    setDialogMode("edit");
+    setEditingId(cliente.id);
+    setFormState({
+      nombre: cliente.nombre,
+      telefono: cliente.telefono ?? "",
+      email: cliente.email ?? "",
+      direccion: cliente.direccion ?? "",
+      tipo: getTipoNormalizado(cliente.tipo ?? null),
+    });
+    setErrorMessage(null);
+    setDialogOpen(true);
+  }
+
+  async function handleDelete(cliente: Cliente) {
+    const confirmed = window.confirm(
+      `¿Seguro que deseas eliminar a ${cliente.nombre}?`,
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("clientes").delete().eq("id", cliente.id);
+
+    if (error) {
+      setErrorMessage("No se pudo eliminar el cliente.");
+      return;
+    }
+
+    setRows((prev) => prev.filter((item) => item.id !== cliente.id));
+    router.refresh();
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!formState.nombre.trim()) {
+      setErrorMessage("El nombre es obligatorio.");
+      return;
+    }
+
+    setSaving(true);
+    setErrorMessage(null);
+
+    const payload = {
+      nombre: formState.nombre.trim(),
+      telefono: formState.telefono.trim() || null,
+      email: formState.email.trim() || null,
+      direccion: formState.direccion.trim() || null,
+      tipo: formState.tipo,
+    };
+
+    if (dialogMode === "create") {
+      const { data, error } = await supabase
+        .from("clientes")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        setErrorMessage("No se pudo crear el cliente.");
+        setSaving(false);
+        return;
+      }
+
+      setRows((prev) =>
+        [...prev, data as Cliente].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      );
+    } else {
+      if (!editingId) {
+        setErrorMessage("No se encontró el cliente a editar.");
+        setSaving(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("clientes")
+        .update(payload)
+        .eq("id", editingId)
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        setErrorMessage("No se pudo actualizar el cliente.");
+        setSaving(false);
+        return;
+      }
+
+      setRows((prev) =>
+        prev
+          .map((item) => (item.id === editingId ? (data as Cliente) : item))
+          .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      );
+    }
+
+    setSaving(false);
+    setDialogOpen(false);
+    setFormState(initialFormState);
+    setEditingId(null);
+    router.refresh();
+  }
 
   const clientesFiltrados = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return clientes.filter((cliente) => {
+    return rows.filter((cliente) => {
       const nombre = cliente.nombre.toLowerCase();
       const coincideNombre = query.length === 0 || nombre.includes(query);
       const tipoNormalizado = getTipoNormalizado(cliente.tipo ?? null);
@@ -38,7 +192,7 @@ export function ClientesTable({ clientes }: ClientesTableProps) {
 
       return coincideNombre && coincideTipo;
     });
-  }, [clientes, filtroTipo, search]);
+  }, [rows, filtroTipo, search]);
 
   return (
     <div>
@@ -100,76 +254,180 @@ export function ClientesTable({ clientes }: ClientesTableProps) {
                 tipoNormalizado === "empresa"
                   ? "bg-blue-100 text-blue-600"
                   : "bg-slate-100 text-slate-600";
-              const badgeClass =
-                tipoNormalizado === "empresa"
-                  ? "bg-[#90D5FF]/20 text-[#0060a8]"
-                  : "bg-slate-100 text-slate-600";
 
               return (
-                <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
+                <tr
+                  key={cliente.id}
+                  className="hover:bg-slate-50 transition-colors"
+                >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${avatarClass}`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${avatarClass}`}
                       >
                         {getInitials(cliente.nombre)}
                       </div>
-                      <span className="text-body-md font-semibold text-on-surface">
+                      <span className="font-medium text-slate-900">
                         {cliente.nombre}
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-body-md text-on-secondary-container">
+                  <td className="px-6 py-4 text-slate-600">
                     {cliente.telefono ?? "-"}
                   </td>
-                  <td className="px-6 py-4 text-body-md text-on-secondary-container">
+                  <td className="px-6 py-4 text-slate-600">
                     {cliente.email ?? "-"}
                   </td>
-                  <td className="px-6 py-4 text-body-md text-on-secondary-container">
+                  <td className="px-6 py-4 text-slate-600">
                     {cliente.direccion ?? "-"}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span
-                      className={`px-3 py-1 text-[11px] font-bold rounded-full ${badgeClass}`}
+                      className={`inline-block px-2 py-1 rounded text-xs font-bold ${
+                        tipoNormalizado === "empresa"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-slate-100 text-slate-700"
+                      }`}
                     >
                       {tipoNormalizado === "empresa" ? "Empresa" : "Particular"}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/10 rounded transition-all">
-                        <Pencil className="text-[20px]" />
-                      </button>
-                      <button className="p-1.5 text-slate-400 hover:text-error hover:bg-error/10 rounded transition-all">
-                        <Trash2 className="text-[20px]" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      onClick={() => openEditDialog(cliente)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      onClick={() => handleDelete(cliente)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <div className="px-6 py-4 bg-slate-50/50 flex items-center justify-between border-t border-slate-100">
-          <span className="text-body-md text-slate-500 italic">
-            Mostrando {clientesFiltrados.length} de {clientes.length} clientes
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              className="px-4 py-1.5 border border-slate-200 rounded text-slate-400 text-sm font-medium cursor-not-allowed"
-              disabled
-            >
-              Anterior
-            </button>
-            <button
-              className="px-4 py-1.5 border border-slate-200 rounded text-slate-400 text-sm font-medium cursor-not-allowed"
-              disabled
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
       </div>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setErrorMessage(null);
+            if (openCreateInitially) {
+              router.replace("/clientes");
+            }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {dialogMode === "create" ? "Agregar cliente" : "Editar cliente"}
+            </DialogTitle>
+            <DialogDescription>
+              Completa la información del cliente para guardarla en el sistema.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Nombre</label>
+              <Input
+                value={formState.nombre}
+                onChange={(event) =>
+                  setFormState((prev) => ({ ...prev, nombre: event.target.value }))
+                }
+                placeholder="Nombre completo"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Teléfono</label>
+                <Input
+                  value={formState.telefono}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, telefono: event.target.value }))
+                  }
+                  placeholder="3001234567"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Tipo</label>
+                <select
+                  className="w-full h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                  value={formState.tipo}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      tipo: event.target.value as "empresa" | "particular",
+                    }))
+                  }
+                >
+                  <option value="empresa">Empresa</option>
+                  <option value="particular">Particular</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Email</label>
+              <Input
+                type="email"
+                value={formState.email}
+                onChange={(event) =>
+                  setFormState((prev) => ({ ...prev, email: event.target.value }))
+                }
+                placeholder="cliente@correo.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Dirección</label>
+              <Input
+                value={formState.direccion}
+                onChange={(event) =>
+                  setFormState((prev) => ({ ...prev, direccion: event.target.value }))
+                }
+                placeholder="Ciudad, dirección"
+              />
+            </div>
+
+            {errorMessage && (
+              <p className="text-sm text-red-600" role="alert">
+                {errorMessage}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                disabled={saving}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving
+                  ? "Guardando..."
+                  : dialogMode === "create"
+                    ? "Crear cliente"
+                    : "Guardar cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
