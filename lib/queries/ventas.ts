@@ -1,7 +1,9 @@
-import { supabase } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase";
 import { Venta } from "@/types";
 
 export async function getVentas(): Promise<Venta[]> {
+  const supabase = await createSupabaseServerClient();
+
   const { data, error } = await supabase
     .from("ventas")
     .select("*, clientes(nombre)")
@@ -12,6 +14,8 @@ export async function getVentas(): Promise<Venta[]> {
 }
 
 export async function getTotalVentasMes(): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+
   const ahora = new Date();
   const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
   const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);

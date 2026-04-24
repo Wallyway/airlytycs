@@ -1,7 +1,9 @@
-import { supabase } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase";
 import { Cliente } from "@/types";
 
 export async function getClientes(): Promise<Cliente[]> {
+  const supabase = await createSupabaseServerClient();
+
   const { data, error } = await supabase
     .from("clientes")
     .select("*")
@@ -12,6 +14,8 @@ export async function getClientes(): Promise<Cliente[]> {
 }
 
 export async function getClienteById(id: number): Promise<Cliente | null> {
+  const supabase = await createSupabaseServerClient();
+
   const { data, error } = await supabase
     .from("clientes")
     .select("*")

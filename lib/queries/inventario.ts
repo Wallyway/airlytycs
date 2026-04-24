@@ -1,7 +1,9 @@
-import { supabase } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase";
 import { Inventario } from "@/types";
 
 export async function getInventario(): Promise<Inventario[]> {
+  const supabase = await createSupabaseServerClient();
+
   const { data, error } = await supabase
     .from("inventario")
     .select("*, productos(nombre)")
@@ -12,6 +14,8 @@ export async function getInventario(): Promise<Inventario[]> {
 }
 
 export async function getStockCritico(): Promise<Inventario[]> {
+  const supabase = await createSupabaseServerClient();
+
   const { data, error } = await supabase.rpc("productos_stock_critico");
 
   if (error) throw error;

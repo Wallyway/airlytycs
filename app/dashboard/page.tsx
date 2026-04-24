@@ -1,6 +1,177 @@
+import Link from "next/link";
 import { getClientes } from "@/lib/queries/clientes";
 import { getInventario, getStockCritico } from "@/lib/queries/inventario";
 import { getTotalVentasMes, getVentas } from "@/lib/queries/ventas";
+
+type PeriodoGrafica = "semana" | "mes" | "anio";
+
+type PuntoSerie = {
+  key: string;
+  label: string;
+  total: number;
+};
+
+function toISODateKey(fecha: Date) {
+  return fecha.toISOString().slice(0, 10);
+}
+
+function getSerieVentas(
+  ventas: { fecha: string; total: number }[],
+  periodo: PeriodoGrafica
+): PuntoSerie[] {
+  const hoy = new Date();
+
+  if (periodo === "anio") {
+    const year = hoy.getFullYear();
+    const meses: PuntoSerie[] = Array.from({ length: 12 }, (_, index) => ({
+      key: `${year}-${String(index + 1).padStart(2, "0")}`,
+      label: new Date(year, index, 1).toLocaleDateString("es-CO", {
+        month: "short",
+      }),
+      total: 0,
+    }));
+    const mapaMes = new Map(meses.map((mes) => [mes.key, mes]));
+
+    for (const venta of ventas) {
+      const fechaVenta = new Date(venta.fecha);
+      if (fechaVenta.getFullYear() !== year) continue;
+
+      const key = `${fechaVenta.getFullYear()}-${String(
+        fechaVenta.getMonth() + 1
+      ).padStart(2, "0")}`;
+      const mes = mapaMes.get(key);
+
+      if (mes) {
+        mes.total += Number(venta.total);
+      }
+    }
+
+    return meses;
+  }
+
+  if (periodo === "semana") {
+    const inicioSemana = new Date(hoy);
+    const day = inicioSemana.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    inicioSemana.setDate(inicioSemana.getDate() - diffToMonday);
+    inicioSemana.setHours(0, 0, 0, 0);
+
+    const diasSemana: PuntoSerie[] = Array.from({ length: 7 }, (_, index) => {
+      const fecha = new Date(inicioSemana);
+      fecha.setDate(inicioSemana.getDate() + index);
+
+      return {
+        key: toISODateKey(fecha),
+        label: fecha.toLocaleDateString("es-CO", { weekday: "short" }),
+        total: 0,
+      };
+    });
+    const mapaDia = new Map(diasSemana.map((dia) => [dia.key, dia]));
+
+    for (const venta of ventas) {
+      const fechaVenta = new Date(venta.fecha);
+      fechaVenta.setHours(0, 0, 0, 0);
+      const diaSerie = mapaDia.get(toISODateKey(fechaVenta));
+
+      if (diaSerie) {
+        diaSerie.total += Number(venta.total);
+      }
+    }
+
+    return diasSemana;
+  }
+
+  const year = hoy.getFullYear();
+  const month = hoy.getMonth();
+  const ultimoDiaMes = new Date(year, month + 1, 0).getDate();
+
+  const dias: PuntoSerie[] = Array.from({ length: ultimoDiaMes }, (_, index) => {
+    const fecha = new Date(year, month, index + 1);
+    fecha.setHours(0, 0, 0, 0);
+
+    return {
+      key: toISODateKey(fecha),
+      label: String(index + 1),
+      total: 0,
+    };
+  });
+  const mapaDia = new Map(dias.map((dia) => [dia.key, dia]));
+
+  for (const venta of ventas) {
+    const fechaVenta = new Date(venta.fecha);
+    fechaVenta.setHours(0, 0, 0, 0);
+    const dia = mapaDia.get(toISODateKey(fechaVenta));
+
+    if (dia) {
+      dia.total += Number(venta.total);
+    }
+  }
+
+  return dias;
+}
+
+function shouldShowTick(
+  periodo: PeriodoGrafica,
+  index: number,
+  total: number
+) {
+  if (periodo === "semana" || periodo === "anio") return true;
+  if (index === 0 || index === total - 1) return true;
+  if (periodo === "mes") {
+    return (index + 1) % 5 === 0;
+  }
+
+  return false;
+}
+
+function construirPuntosYPath(valores: number[]) {
+  const width = 600;
+  const height = 240;
+  const topPadding = 20;
+  const bottomPadding = 40;
+  const usableHeight = height - topPadding - bottomPadding;
+  const stepX = width / Math.max(valores.length - 1, 1);
+  const maxValor = Math.max(...valores, 1);
+
+  const puntos = valores.map((valor, index) => {
+    const x = index * stepX;
+    const y = topPadding + (1 - valor / maxValor) * usableHeight;
+    return { x, y };
+  });
+
+  const pathLinea = puntos
+    .map((punto, index) => `${index === 0 ? "M" : "L"}${punto.x} ${punto.y}`)
+    .join(" ");
+  const pathArea = `${pathLinea} L${width} ${height} L0 ${height} Z`;
+
+  return { pathLinea, pathArea };
+}
+
+function getTextoPeriodo(periodo: PeriodoGrafica) {
+  if (periodo === "mes") return "mes";
+  if (periodo === "anio") return "año";
+  return "semana";
+}
+
+function getSubtituloGrafica(periodo: PeriodoGrafica) {
+  if (periodo === "mes") {
+    return "Días del mes actual con marcas cada 5 días.";
+  }
+
+  if (periodo === "anio") {
+    return "Comparación mensual del año actual.";
+  }
+
+  return "Comparación día a día de la semana actual.";
+}
+
+function getLabelGrafica(periodo: PeriodoGrafica, label: string) {
+  if (periodo === "mes") {
+    return label;
+  }
+
+  return label;
+}
 
 function getEstado(stockDisponible: number, stockMinimo: number) {
   if (stockDisponible < stockMinimo) {
@@ -12,7 +183,18 @@ function getEstado(stockDisponible: number, stockMinimo: number) {
   return { label: "OK", className: "bg-emerald-100 text-emerald-700" };
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ periodo?: string }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const periodoRaw = resolvedSearchParams?.periodo;
+  const periodo: PeriodoGrafica =
+    periodoRaw === "mes" || periodoRaw === "anio" || periodoRaw === "semana"
+      ? periodoRaw
+      : "semana";
+
   const [totalVentasMes, clientes, stockCritico, inventario, ventas] =
     await Promise.all([
       getTotalVentasMes(),
@@ -29,6 +211,10 @@ export default async function DashboardPage() {
   const ventasRecientes = ventas.slice(0, 3);
   const inventarioResumen = inventario.slice(0, 3);
   const stockCriticoCount = stockCritico.length;
+  const serieVentas = getSerieVentas(ventas, periodo);
+  const { pathLinea, pathArea } = construirPuntosYPath(
+    serieVentas.map((punto) => punto.total)
+  );
 
   return (
     <main className="ml-64 pt-24 px-8 pb-12">
@@ -87,18 +273,43 @@ export default async function DashboardPage() {
           <div className="flex justify-between items-center mb-10">
             <div>
               <h3 className="text-lg font-heading font-bold text-slate-900">
-                User Engagement Over Time
+                Ventas de la {getTextoPeriodo(periodo)}
               </h3>
               <p className="text-sm text-slate-400">
-                Tracking active sessions against historical benchmarks
+                {getSubtituloGrafica(periodo)}
               </p>
+            </div>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+              {(["semana", "mes", "anio"] as const).map((opcion) => {
+                const activo = periodo === opcion;
+                const etiqueta =
+                  opcion === "semana"
+                    ? "Semana"
+                    : opcion === "mes"
+                    ? "Mes"
+                    : "Año";
+
+                return (
+                  <Link
+                    key={opcion}
+                    href={`/dashboard?periodo=${opcion}`}
+                    className={`rounded-md px-3 py-1 transition-colors ${
+                      activo
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    {etiqueta}
+                  </Link>
+                );
+              })}
             </div>
           </div>
           <svg
             viewBox="0 0 600 240"
             className="h-64 w-full"
             role="img"
-            aria-label="Grafica de actividad"
+            aria-label={`Gráfica de ventas por ${getTextoPeriodo(periodo)}`}
           >
             <defs>
               <linearGradient id="line" x1="0" y1="0" x2="0" y2="1">
@@ -107,11 +318,11 @@ export default async function DashboardPage() {
               </linearGradient>
             </defs>
             <path
-              d="M0 180 L80 140 L160 150 L240 110 L320 120 L400 80 L480 90 L560 60 L600 70 L600 240 L0 240 Z"
+              d={pathArea}
               fill="url(#line)"
             />
             <path
-              d="M0 180 L80 140 L160 150 L240 110 L320 120 L400 80 L480 90 L560 60 L600 70"
+              d={pathLinea}
               fill="none"
               stroke="#0095ff"
               strokeWidth="3"
@@ -119,13 +330,18 @@ export default async function DashboardPage() {
             />
           </svg>
           <div className="flex justify-between mt-4 px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            <span>Mon</span>
-            <span>Tue</span>
-            <span>Wed</span>
-            <span>Thu</span>
-            <span>Fri</span>
-            <span>Sat</span>
-            <span>Sun</span>
+            {serieVentas.map((punto, index) => (
+              <span
+                key={punto.key}
+                className={
+                  shouldShowTick(periodo, index, serieVentas.length)
+                    ? ""
+                    : "opacity-0"
+                }
+              >
+                {getLabelGrafica(periodo, punto.label)}
+              </span>
+            ))}
           </div>
         </div>
         <div className="bg-[#283044] p-8 rounded-xl shadow-xl text-white">
