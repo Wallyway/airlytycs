@@ -1,550 +1,307 @@
-# 🏥 Dashboard Médico — Guía de Desarrollo (Prototipo)
+# Dashboard Medico — AGENTS.md
 
-> **Stack:** Next.js 14 (App Router + TypeScript) · Supabase · shadcn/ui · Tailwind CSS · Stitch (prototipado)
->
-> Este documento es una guía paso a paso para construir un prototipo funcional de dashboard para una empresa que comercializa productos médicos. Cubre: clientes, proveedores, productos, ventas, inventario y movimientos.
+> **Last updated:** 2026-05-03 · Reflects actual code, not aspirational design
 
 ---
 
-## 📐 Diagrama de clases (referencia)
+## Project Overview
 
-```
-Cliente ──────────────────> Venta ──────> Producto
-  id: int                    id: int        id: String
-  nombre: String             fecha: Date    nombre: String
-  telefono: String           total: Number  modelo: String
-  email: String                             descripcion: String
-  direccion: String                              │
-  tipo: String                                   │
-  historialVentas(): Venta[]              ┌──────┴──────┐
-                                          │             │
-Proveedor ─────────> OrdenProveedor    Inventario   Movimiento
-  id: int              id: int           id: int      id: int
-  nombreEmpresa        fecha: Date       stockDisp.   tipo: String
-  contacto             estado: String    ubicacion    fecha: Date
-  email                                 stockMinimo  cantidad: int
-  telefono                              verificarStock(): void
-  categoria
-  cumplimientoCalidad
-```
+Administrative dashboard for a medical-products distribution company. Manages clients (hospitals, clinics, individuals), suppliers, product catalog, inventory stock levels with critical-stock alerts, sales transactions, and inventory movement audit trails. Currently a read-heavy prototype: 4 of 6 modules have full CRUD (Clientes, Proveedores, Productos, Inventario); Ventas and Movimientos are display-only. No authentication, no API routes, mutations go directly from browser to Supabase.
 
 ---
 
-## 🗂️ Estructura de carpetas del proyecto
+## Tech Stack
+
+| Layer | Package | Version | Notes |
+|---|---|---|---|
+| Framework | `next` | **16.2.4** | App Router, Server Components default |
+| UI | `react` / `react-dom` | **19.2.4** | `searchParams` is `Promise` in Next 16 |
+| UI primitives | `radix-ui` | **1.4.3** | Used by shadcn components |
+| UI CLI | `shadcn` | **4.4.0** | Style: `radix-nova`, CSS variables |
+| Icons | `lucide-react` | **1.9.0** | |
+| CSS | `tailwindcss` | **4.x** | No `tailwind.config.js`; theme in `@theme inline` in `globals.css` |
+| Data | `@supabase/supabase-js` | **2.104.1** | Direct client, no API route layer |
+| Data (unused) | `@supabase/ssr` | **0.10.2** | Installed but never imported — dead dependency |
+| Types | `typescript` | **5.x** | Strict mode |
+| Lint | `eslint` | **9.x** | + `eslint-config-next` |
+
+Key deviations from initial spec: Next.js 16 (not 14), React 19 (not 18), Tailwind v4 (not v3), no Recharts (SVG hand-coded chart in `app/dashboard/page.tsx`).
+
+---
+
+## Architecture
+
+### High-level: Hybrid Server/Client Components with direct-to-DB mutations
+
+```
+Browser
+┌──────────────────────────────────────────────────────┐
+│  Server Component Page (async)                       │
+│    │                                                 │
+│    ├── Promise.all() parallel queries                │
+│    │   → lib/queries/*.ts → createSupabaseServerClient() │
+│    │                                                 │
+│    └── passes data as props →                        │
+│         Client Component Table ("use client")        │
+│           │                                          │
+│           └── CRUD mutations →                       │
+│                createSupabaseBrowserClient() →       │
+│                supabase.from("...").insert/update/delete │
+└──────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    Supabase (Postgres)
+                    RLS presumably disabled (prototype)
+```
+
+### Data access pattern
+
+- **Reads:** Server Components call functions in `lib/queries/` which use `createSupabaseServerClient()` (`lib/supabase.ts`, guarded by `import "server-only"`). Queries are parallelized with `Promise.all()`.
+- **Writes:** Client Components call `createSupabaseBrowserClient()` (`lib/supabase-browser.ts`, module-level singleton) and mutate Supabase tables directly. No API routes. No Zod validation. No server-side validation.
+- **No middleware.ts**, no `app/api/` routes, no auth layer.
+
+### Why this matters for agents
+
+- Adding a new read-only page: create Server Component + query function in `lib/queries/`.
+- Adding a new CRUD module: follow the pattern in `components/clientes/ClientesTable.tsx` — `"use client"`, dialog form, direct Supabase mutations, local state updates + `router.refresh()`.
+- Never put mutation logic in `lib/queries/` — those are server-read-only.
+
+---
+
+## Repository Structure
 
 ```
 dashboard-medico/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx                  ← redirige a /dashboard
-│   ├── dashboard/
-│   │   └── page.tsx              ← KPIs + gráfica de ventas
-│   ├── clientes/
-│   │   ├── page.tsx              ← tabla de clientes
-│   │   └── [id]/page.tsx         ← detalle + historial
-│   ├── proveedores/
-│   │   ├── page.tsx
-│   │   └── [id]/page.tsx
-│   ├── productos/
-│   │   └── page.tsx
-│   ├── inventario/
-│   │   └── page.tsx              ← con alertas de stock mínimo
-│   ├── ventas/
-│   │   └── page.tsx
-│   └── movimientos/
-│       └── page.tsx
+├── app/                          # Next.js App Router — file-based routing
+│   ├── layout.tsx                # Root layout (Sidebar + Header + children)
+│   ├── page.tsx                  # Redirects to /dashboard
+│   ├── globals.css               # Tailwind v4 theme + CSS variables + dark mode
+│   ├── dashboard/page.tsx        # KPIs, SVG chart, inventory summary, recent activity
+│   ├── clientes/page.tsx         # CRUD module — 3 stat cards + ClientesTable
+│   ├── proveedores/page.tsx      # CRUD module — 3 stat cards + ProveedoresTable
+│   ├── productos/page.tsx        # CRUD module — stat cards + ProductosTable + inventory bars
+│   ├── inventario/page.tsx       # CRUD module — stat cards + StockAlerta + InventarioTable
+│   ├── ventas/page.tsx           # Read-only — stat cards + VentasTable
+│   └── movimientos/page.tsx      # Read-only — stat cards + MovimientosTable
+│
 ├── components/
-│   ├── layout/
-│   │   ├── Sidebar.tsx
-│   │   └── Header.tsx
+│   ├── layout/                   # Persistent shell (both "use client")
+│   │   ├── Sidebar.tsx           # 260px fixed left nav, 7 routes, active state via usePathname
+│   │   └── Header.tsx            # Fixed top bar, dynamic title from route, non-functional search
 │   ├── dashboard/
-│   │   ├── KpiCard.tsx
-│   │   └── VentasChart.tsx
-│   ├── clientes/
-│   │   └── ClientesTable.tsx
+│   │   └── KpiCard.tsx           # Defined but barely used — pages build KPIs inline
+│   ├── clientes/ClientesTable.tsx       # Full CRUD: search, type filter, dialog, delete
+│   ├── proveedores/ProveedoresTable.tsx # Full CRUD: search, category/compliance filters, pagination (8/page)
+│   ├── productos/ProductosTable.tsx     # Full CRUD: search, inventory join, hardcoded pagination UI
 │   ├── inventario/
-│   │   └── StockAlerta.tsx
-│   └── ui/                       ← generado por shadcn
+│   │   ├── InventarioTable.tsx   # Full CRUD: product selector dialog, stock edit
+│   │   └── StockAlerta.tsx       # Server component, red banner when stock < minimum
+│   ├── ventas/VentasTable.tsx           # Server component, read-only display
+│   ├── movimientos/MovimientosTable.tsx # Server component, read-only display
+│   └── ui/                       # shadcn primitives (auto-generated, do not hand-edit)
+│       ├── button.tsx
+│       ├── card.tsx
+│       ├── table.tsx
+│       ├── dialog.tsx
+│       ├── input.tsx
+│       ├── badge.tsx
+│       └── select.tsx            # Scaffolded but never imported — dead code
+│
 ├── lib/
-│   ├── supabase.ts               ← cliente browser
-│   └── queries/
-│       ├── clientes.ts
-│       ├── ventas.ts
-│       └── inventario.ts
+│   ├── supabase.ts               # Server-only client factory (import "server-only")
+│   ├── supabase-browser.ts       # Browser client singleton
+│   ├── utils.ts                  # cn() = tailwind-merge + clsx
+│   └── queries/                  # Server-read-only data access
+│       ├── clientes.ts           # getClientes(), getClienteById()
+│       ├── ventas.ts             # getVentas(), getTotalVentasMes()
+│       ├── inventario.ts         # getInventario(), getStockCritico() (via RPC)
+│       ├── proveedores.ts        # getProveedores()
+│       ├── productos.ts          # getProductos()
+│       └── movimientos.ts        # getMovimientos()
+│
 ├── types/
-│   └── index.ts                  ← interfaces TypeScript
-└── .env.local
+│   └── index.ts                  # All TypeScript interfaces (single file, 59 lines)
+│
+├── public/                       # Unused default Next.js SVGs
+├── .env.local                    # NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+├── components.json               # shadcn config (radix-nova style, CSS variables)
+├── next.config.ts                # Empty default config
+├── tsconfig.json                 # Strict, ES2017 target, @/* alias
+├── postcss.config.mjs            # @tailwindcss/postcss v4
+└── eslint.config.mjs             # Flat config, eslint-config-next
 ```
+
+### Why this structure exists
+
+- **Feature-based component grouping** (`clientes/`, `proveedores/`, etc.) keeps related code co-located. Scales well as modules grow.
+- **Single `types/index.ts`** is acceptable at current scale (~3,500 lines total). Split when file exceeds ~150 lines or types are referenced from >10 files.
+- **No `[id]` detail routes** despite being in the initial spec. `getClienteById()` exists but is unconsumed.
+- **No `orden_proveedor` module** — table exists in DB schema but has zero code support. Dashboard KPI "ORDENES PENDIENTES" is hardcoded to `0`.
 
 ---
 
-## ⚙️ Fase 0 — Setup inicial
+## Key Commands
 
-### 1. Crear el proyecto
+| Command | Description |
+|---|---|
+| `npm run dev` | Start dev server with HMR on default port |
+| `npm run build` | Production build (compiles + type-checks + optimizes) |
+| `npm run start` | Run production server |
+| `npm run lint` | ESLint across all files |
 
-```bash
-npx create-next-app@latest dashboard-medico \
-  --typescript \
-  --tailwind \
-  --app \
-  --src-dir=false \
-  --import-alias="@/*"
+**No test framework** — no Jest, Vitest, Playwright, or `*.test.*` files exist.
+**No test script** in `package.json`.
 
-cd dashboard-medico
-```
+### Deployment
 
-### 2. Instalar dependencias
-
-```bash
-# Supabase
-npm install @supabase/supabase-js @supabase/ssr
-
-# shadcn/ui
-npx shadcn@latest init
-# Durante el init: Default style → Slate → CSS variables → Yes
-
-# Componentes shadcn que usarás
-npx shadcn@latest add table card badge button input dialog form select
-```
-
-### 3. Variables de entorno
-
-Crea `.env.local` en la raíz:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5...
-```
-
-### 4. Cliente de Supabase
-
-**`/lib/supabase.ts`**
-
-```typescript
-import { createBrowserClient } from "@supabase/ssr";
-
-export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
-```
+No deployment config files (`vercel.json`, `Dockerfile`, etc.). `.gitignore` includes `.vercel/`, suggesting Vercel was considered. Required env vars at deploy time:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
 ---
 
-## 🗄️ Fase 1 — Base de datos en Supabase
+## Coding Standards & Conventions
 
-Ejecuta en orden en el **SQL Editor** de Supabase:
+Derived from existing code, not aspirational.
 
-```sql
--- ==========================================
--- TABLAS INDEPENDIENTES (sin foreign keys)
--- ==========================================
+### Naming
+- **Files:** PascalCase for components (`ClientesTable.tsx`), camelCase for utilities/lib files (`supabase-browser.ts`)
+- **Functions:** camelCase, Spanish naming when domain-specific (`getClientes`, `getStockCritico`, `getSerieVentas`)
+- **Types/Interfaces:** PascalCase, suffixed with `Props` for component props, `State` for form state
+- **DB columns:** snake_case, preserved verbatim in TypeScript interfaces (`nombre_empresa`, `stock_disponible`)
 
-create table clientes (
-  id          serial primary key,
-  nombre      text not null,
-  telefono    text,
-  email       text,
-  direccion   text,
-  tipo        text,                        -- ej: 'hospital', 'clinica', 'particular'
-  created_at  timestamp default now()
-);
+### Component patterns
+- **Page components:** Default export async functions, Server Components by default. Type `searchParams` as `Promise<{ ... }>`.
+- **Table components with CRUD:** `"use client"` directive, receive initial data as props, maintain local `rows` state with `useState`, sync via `useEffect` when props change.
+- **Table components read-only:** No `"use client"`, pure render from props.
+- **Dialog-driven forms:** Single dialog toggled between create/edit mode via `dialogMode` state. Form state in typed `*FormState` interface.
+- **KPI stat cards:** Built inline in pages (not using `KpiCard` component). 3-column grid on most pages, 4-column on dashboard.
 
-create table proveedores (
-  id                     serial primary key,
-  nombre_empresa         text not null,
-  contacto               text,
-  email                  text,
-  telefono               text,
-  categoria              text,
-  cumplimiento_calidad   text,             -- ej: 'alto', 'medio', 'bajo'
-  created_at             timestamp default now()
-);
+### Data patterns
+- **Server queries:** Each function in `lib/queries/` creates its own client via `await createSupabaseServerClient()`. Throws on error. Returns empty array on null data.
+- **Browser mutations:** Call `createSupabaseBrowserClient()`, use `.insert()` / `.update()` / `.delete()`, chain `.select("*").single()` to get result. Update local state, call `router.refresh()`.
+- **Parallel queries:** Pages use `Promise.all([...])` to avoid waterfalls.
+- **Null handling:** Consistent `??` coalescing, `?? "-"` for display fallbacks.
 
-create table productos (
-  id           text primary key,           -- ej: 'PROD-001'
-  nombre       text not null,
-  modelo       text,
-  descripcion  text,
-  created_at   timestamp default now()
-);
+### CSS conventions
+- **Tailwind v4** with `@theme inline` in `globals.css`. No config file.
+- **Design tokens:** CSS variables follow shadcn convention (`--background`, `--foreground`, etc.) with oklch values.
+- **Font classes:** `font-heading` (Manrope), `font-sans` (Inter), `font-mono` (Geist Mono).
+- **Mixed class usage:** Pages inconsistently use:
+  - Standard Tailwind (`text-slate-900`, `bg-white`) — dashboard page
+  - Custom token classes (`text-on-surface`, `text-h1`, `font-h1`, `text-data-display`, `bg-primary-container/10`) — clientes, proveedores, inventario pages
+  - The custom token classes (`text-h1`, `text-on-surface`, etc.) are **not defined** in `globals.css` and will not render as intended unless provided by `shadcn/tailwind.css` import.
+- **Sidebar width:** 260px. Dashboard page uses `ml-64` (256px) — 4px misalignment. All other pages use `ml-[260px]`.
 
--- ==========================================
--- TABLAS DEPENDIENTES (con foreign keys)
--- ==========================================
-
-create table ventas (
-  id          serial primary key,
-  fecha       date not null default current_date,
-  total       numeric(10,2) not null,
-  cliente_id  int references clientes(id) on delete set null,
-  created_at  timestamp default now()
-);
-
-create table orden_proveedor (
-  id            serial primary key,
-  fecha         date not null default current_date,
-  estado        text default 'pendiente',  -- 'pendiente', 'aprobada', 'entregada'
-  proveedor_id  int references proveedores(id) on delete set null,
-  producto_id   text references productos(id) on delete set null,
-  created_at    timestamp default now()
-);
-
-create table inventario (
-  id                serial primary key,
-  stock_disponible  int not null default 0,
-  ubicacion         text,
-  stock_minimo      int not null default 5,
-  producto_id       text references productos(id) on delete cascade,
-  updated_at        timestamp default now()
-);
-
-create table movimientos (
-  id           serial primary key,
-  tipo         text not null,              -- 'entrada', 'salida', 'ajuste'
-  fecha        date not null default current_date,
-  cantidad     int not null,
-  producto_id  text references productos(id) on delete set null,
-  created_at   timestamp default now()
-);
-
--- ==========================================
--- FUNCIÓN: verificar stock crítico
--- ==========================================
-
-create or replace function productos_stock_critico()
-returns table (
-  producto_id   text,
-  nombre        text,
-  stock_actual  int,
-  stock_minimo  int
-) language sql as $$
-  select p.id, p.nombre, i.stock_disponible, i.stock_minimo
-  from inventario i
-  join productos p on p.id = i.producto_id
-  where i.stock_disponible < i.stock_minimo;
-$$;
-
--- ==========================================
--- DATOS DE PRUEBA
--- ==========================================
-
-insert into clientes (nombre, telefono, email, tipo) values
-  ('Clínica San Rafael', '3001234567', 'compras@sanrafael.com', 'clinica'),
-  ('Hospital Central', '3117654321', 'admin@hospitalcentral.co', 'hospital'),
-  ('Dr. Andrés Mora', '3209876543', 'andres.mora@gmail.com', 'particular');
-
-insert into proveedores (nombre_empresa, contacto, email, categoria, cumplimiento_calidad) values
-  ('MedSupply S.A.', 'Laura Gómez', 'laura@medsupply.com', 'insumos', 'alto'),
-  ('BioEquipos Ltda.', 'Carlos Ruiz', 'carlos@bioequipos.co', 'equipos', 'medio');
-
-insert into productos (id, nombre, modelo, descripcion) values
-  ('PROD-001', 'Tensiómetro Digital', 'TD-2000', 'Tensiómetro de brazo con pantalla LCD'),
-  ('PROD-002', 'Glucómetro', 'GL-500', 'Medidor de glucosa en sangre'),
-  ('PROD-003', 'Oxímetro de pulso', 'OX-100', 'Medidor de saturación de oxígeno');
-
-insert into inventario (stock_disponible, ubicacion, stock_minimo, producto_id) values
-  (25, 'Bodega A', 10, 'PROD-001'),
-  (3,  'Bodega A', 10, 'PROD-002'),  -- ← stock crítico
-  (50, 'Bodega B', 5,  'PROD-003');
-
-insert into ventas (fecha, total, cliente_id) values
-  ('2026-01-15', 450000, 1),
-  ('2026-02-03', 1200000, 2),
-  ('2026-03-20', 320000, 1),
-  ('2026-04-01', 850000, 3);
-
-insert into movimientos (tipo, fecha, cantidad, producto_id) values
-  ('entrada', '2026-01-10', 30, 'PROD-001'),
-  ('salida',  '2026-01-15', 5,  'PROD-001'),
-  ('entrada', '2026-02-01', 10, 'PROD-002'),
-  ('salida',  '2026-03-10', 7,  'PROD-002');
-```
+### TypeScript
+- Strict mode enabled.
+- All interfaces in single `types/index.ts`.
+- `DashboardKPIs` interface defined but never imported.
+- `Proveedor` and `Producto` interfaces missing `created_at` field (exists in DB schema).
+- `OrdenProveedor` interface does not exist.
 
 ---
 
-## 🧩 Fase 2 — Types TypeScript
+## Operational Guidelines for Agents
 
-**`/types/index.ts`**
+### Where to make changes
 
-```typescript
-export interface Cliente {
-  id: number;
-  nombre: string;
-  telefono: string | null;
-  email: string | null;
-  direccion: string | null;
-  tipo: string | null;
-  created_at: string;
-}
+| Task | Location |
+|---|---|
+| Add new page/route | `app/<module>/page.tsx` (Server Component) |
+| Add query | `lib/queries/<module>.ts` (server-read-only) |
+| Add CRUD table | `components/<module>/<Module>Table.tsx` ("use client") |
+| Add read-only table | `components/<module>/<Module>Table.tsx` (Server Component) |
+| Add type | `types/index.ts` |
+| Add shadcn component | `npx shadcn@latest add <component>` |
+| Change layout shell | `components/layout/Sidebar.tsx` or `Header.tsx` |
+| Change theme/tokens | `app/globals.css` |
 
-export interface Proveedor {
-  id: number;
-  nombre_empresa: string;
-  contacto: string | null;
-  email: string | null;
-  telefono: string | null;
-  categoria: string | null;
-  cumplimiento_calidad: string | null;
-}
+### What to avoid touching
 
-export interface Producto {
-  id: string;
-  nombre: string;
-  modelo: string | null;
-  descripcion: string | null;
-}
+- **`components/ui/`** — auto-generated by shadcn CLI. Do not hand-edit unless adding variants.
+- **`lib/supabase.ts`** and **`lib/supabase-browser.ts`** — client factories. Only modify if changing auth strategy or Supabase config.
+- **`app/layout.tsx`** — root layout. Changes here affect all routes.
+- **`app/globals.css`** — theme tokens. Changing values affects all components.
+- **`public/`** — contains unused default assets; safe to clean but not critical.
 
-export interface Venta {
-  id: number;
-  fecha: string;
-  total: number;
-  cliente_id: number | null;
-  clientes?: { nombre: string }; // join
-}
+### How to safely extend the system
 
-export interface Inventario {
-  id: number;
-  stock_disponible: number;
-  ubicacion: string | null;
-  stock_minimo: number;
-  producto_id: string;
-  productos?: { nombre: string }; // join
-}
+**Adding a new CRUD module (e.g., OrdenesProveedor):**
 
-export interface Movimiento {
-  id: number;
-  tipo: "entrada" | "salida" | "ajuste";
-  fecha: string;
-  cantidad: number;
-  producto_id: string | null;
-}
+1. Create `lib/queries/ordenes.ts` with `getOrdenes()`, following the pattern: import `createSupabaseServerClient`, call supabase, throw on error, return `data ?? []`.
+2. Create `app/ordenes/page.tsx` as async Server Component: fetch data with `Promise.all()`, render stat cards + table component.
+3. Add route to `Sidebar.tsx` navItems array.
+4. Create `components/ordenes/OrdenesTable.tsx` as `"use client"` component:
+   - Accept `ordenes` as props, copy to local `rows` state
+   - Sync with `useEffect(() => setRows(ordenes), [ordenes])`
+   - Dialog with typed `OrdenFormState` interface
+   - `handleSubmit` calls `createSupabaseBrowserClient()`, `.insert()` / `.update()`, `.select("*").single()`
+   - Update local state, `router.refresh()`, close dialog
+5. Add `OrdenProveedor` interface to `types/index.ts`.
 
-// KPIs para el dashboard
-export interface DashboardKPIs {
-  totalVentas: number;
-  clientesActivos: number;
-  productosStockCritico: number;
-  ordenesPendientes: number;
-}
-```
+**Adding CRUD to existing read-only module (Ventas or Movimientos):**
+- Convert table component from Server Component to Client Component
+- Follow the `ClientesTable.tsx` pattern exactly
+- Add `?nuevo=1` searchParam handling in page (already present, wired to `openCreateInitially`)
+
+### Common pitfalls
+
+1. **`searchParams` is a `Promise`** in Next.js 16. Always `await searchParams` before accessing properties. Pattern: `const params = searchParams ? await searchParams : undefined`.
+2. **Dashboard uses `ml-64` (256px)**, all other pages use `ml-[260px]`. If fixing alignment, change dashboard to `ml-[260px]`.
+3. **Custom token classes** (`text-h1`, `text-on-surface`, `text-data-display`, etc.) are used in module pages but **not defined** in `globals.css`. They may not render correctly. Prefer standard Tailwind classes (`text-3xl`, `text-slate-900`) unless you first define the tokens.
+4. **Browser client is a singleton** (`lib/supabase-browser.ts`). Module-level `let browserClient` can become stale during HMR. If mutation issues appear during dev, consider removing the singleton.
+5. **`@supabase/ssr` is installed but unused.** Do not import it — the server client uses plain `@supabase/supabase-js`. If migrating to SSR pattern, this needs coordinated changes.
+6. **Mutations have no server validation.** Any form validation is client-side only (`if (!field.trim())`). Add server-side checks if security requirements increase.
+7. **ProductosTable pagination is hardcoded decoration.** The Prev/Next buttons are always disabled and only page 1 shows. Do not rely on this pattern for new modules.
+8. **KpiCard component exists but is ignored.** Pages build KPI cards inline. Either refactor pages to use KpiCard or delete the component.
+9. **`getEstado()` is duplicated** in `app/dashboard/page.tsx` and `components/inventario/InventarioTable.tsx`. Extract to `lib/utils.ts` if modifying.
+10. **No `error.tsx` or `loading.tsx`** files. If a query throws, the entire page fails with no fallback.
 
 ---
 
-## 🔌 Fase 3 — Queries a Supabase
+## Known Issues / Risks
 
-**`/lib/queries/clientes.ts`**
+### Critical
 
-```typescript
-import { supabase } from "@/lib/supabase";
-import { Cliente } from "@/types";
+| ID | Issue | Impact | Location |
+|---|---|---|---|
+| H1 | No authentication or authorization. Supabase anon key exposed in browser. RLS presumably disabled. | Anyone with URL can read/write all data. | Entire app |
+| H2 | Ventas and Movimientos modules are read-only. "Nueva Venta" and "Nuevo Movimiento" buttons link to pages with no creation form. | Core business operations cannot be performed. | `app/ventas/page.tsx`, `app/movimientos/page.tsx` |
+| H3 | `orden_proveedor` table in DB has zero code support. Dashboard "ORDENES PENDIENTES" KPI hardcoded to `0`. | Incomplete feature set, misleading KPI. | `app/dashboard/page.tsx:266` |
 
-export async function getClientes(): Promise<Cliente[]> {
-  const { data, error } = await supabase
-    .from("clientes")
-    .select("*")
-    .order("nombre");
+### High
 
-  if (error) throw error;
-  return data ?? [];
-}
+| ID | Issue | Impact | Location |
+|---|---|---|---|
+| H4 | Env var uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` but standard Supabase naming is `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Confusing for new developers. | Onboarding friction, potential misconfiguration. | `lib/supabase.ts:8`, `lib/supabase-browser.ts:10` |
+| H5 | "AirLytics" branding in Sidebar, Header, and Dashboard welcome panel. App is "Dashboard Medico". | Branding inconsistency. | `components/layout/Sidebar.tsx:33,37,73`, `components/layout/Header.tsx:35`, `app/dashboard/page.tsx:349` |
+| H6 | All mutations go directly from browser to Supabase with no server validation, no Zod schemas, no API route gate. | Security risk, data integrity risk. | All `*Table.tsx` client components |
 
-export async function getClienteById(id: number): Promise<Cliente | null> {
-  const { data, error } = await supabase
-    .from("clientes")
-    .select("*")
-    .eq("id", id)
-    .single();
+### Medium
 
-  if (error) throw error;
-  return data;
-}
-```
+| ID | Issue | Impact | Location |
+|---|---|---|---|
+| M1 | No `error.tsx` files in `app/`. Query failures crash entire page. | Poor UX on transient failures. | All routes |
+| M2 | No `loading.tsx` files. Slow queries show blank page. | Poor UX on slow connections. | All routes |
+| M3 | Custom CSS token classes (`text-h1`, `text-on-surface`, etc.) used in module pages but not defined in `globals.css`. | Visual inconsistency, tokens may not render. | `app/clientes/page.tsx`, `app/proveedores/page.tsx`, `app/inventario/page.tsx`, `app/productos/page.tsx` |
+| M4 | Dashboard sidebar margin `ml-64` (256px) vs actual sidebar width 260px. 4px misalignment. | Visual bug. | `app/dashboard/page.tsx:220` |
+| M5 | `getEstado()` duplicated in dashboard page and InventarioTable. | Maintenance burden, risk of divergence. | `app/dashboard/page.tsx:176-184`, `components/inventario/InventarioTable.tsx:48-56` |
+| M6 | `@supabase/ssr` installed but never imported. Dead dependency. | Bundle size, confusion. | `package.json:12` |
+| M7 | `components/ui/select.tsx` scaffolded but never imported. Raw HTML `<select>` used everywhere. | Dead code. | `components/ui/select.tsx` |
+| M8 | `KpiCard` component defined but unused. Pages build KPIs inline. | Dead code, inconsistency. | `components/dashboard/KpiCard.tsx` |
+| M9 | Dashboard chart logic (~120 lines) embedded in page component. Should be extracted. | Maintainability. | `app/dashboard/page.tsx:18-148` |
+| M10 | ProductosTable pagination UI is non-functional decoration. | Misleading UX. | `components/productos/ProductosTable.tsx:339-354` |
+| M11 | `getLabelGrafica()` returns `label` unchanged in all branches. Dead code. | Clutter. | `app/dashboard/page.tsx:168-174` |
+| M12 | `DashboardKPIs` interface defined but never used. | Dead type. | `types/index.ts:54-59` |
+| M13 | Metadata in `app/layout.tsx` is default Next.js placeholder text. | Unprofessional. | `app/layout.tsx:18-21` |
+| M14 | Form validation is client-side only with simple `if (!field.trim())` checks. No email format, phone format, or numeric range validation. | Data quality risk. | All CRUD table components |
 
-**`/lib/queries/inventario.ts`**
+### Low
 
-```typescript
-import { supabase } from "@/lib/supabase";
-import { Inventario } from "@/types";
-
-export async function getInventario(): Promise<Inventario[]> {
-  const { data, error } = await supabase
-    .from("inventario")
-    .select("*, productos(nombre)")
-    .order("stock_disponible");
-
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function getStockCritico(): Promise<Inventario[]> {
-  const { data, error } = await supabase
-    .from("inventario")
-    .select("*, productos(nombre)")
-    .filter("stock_disponible", "lt", "stock_minimo"); // stock < mínimo
-
-  if (error) throw error;
-  return data ?? [];
-}
-```
-
-**`/lib/queries/ventas.ts`**
-
-```typescript
-import { supabase } from "@/lib/supabase";
-import { Venta } from "@/types";
-
-export async function getVentas(): Promise<Venta[]> {
-  const { data, error } = await supabase
-    .from("ventas")
-    .select("*, clientes(nombre)")
-    .order("fecha", { ascending: false });
-
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function getTotalVentasMes(): Promise<number> {
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-
-  const { data, error } = await supabase
-    .from("ventas")
-    .select("total")
-    .gte("fecha", inicioMes.toISOString().split("T")[0]);
-
-  if (error) throw error;
-  return (data ?? []).reduce((acc, v) => acc + Number(v.total), 0);
-}
-```
-
----
-
-## 🎨 Fase 4 — Workflow con Stitch
-
-Stitch acelera la generación del shell visual. Úsalo así:
-
-### Prompts recomendados para Stitch
-
-**Layout principal:**
-
-```
-Create a sidebar dashboard layout in React + Tailwind.
-Sidebar has navigation links: Dashboard, Clientes, Proveedores,
-Productos, Inventario, Ventas, Movimientos.
-Header shows current page title and a user avatar.
-Main content area is scrollable.
-Use a clean white/slate color scheme.
-```
-
-**Página de Dashboard:**
-
-```
-Create a dashboard page with:
-- 4 KPI cards in a row: "Ventas del mes", "Clientes activos",
-  "Stock crítico", "Órdenes pendientes"
-- A line chart below showing monthly sales (ventas por mes)
-- A small alerts section for low stock items
-Use shadcn/ui Card components and recharts for the chart.
-```
-
-**Tabla de clientes:**
-
-```
-Create a data table for "Clientes" with columns:
-Nombre, Tipo, Email, Teléfono, Acciones.
-Include a search input at the top and an "Agregar cliente" button.
-Use shadcn/ui Table component.
-```
-
-### Después de exportar de Stitch
-
-1. Copia el JSX a la carpeta correspondiente en `/components/`
-2. Reemplaza los datos estáticos con las queries de Supabase:
-
-   ```typescript
-   // ❌ Datos hardcodeados de Stitch:
-   const clientes = [{ nombre: 'Cliente 1', ... }]
-
-   // ✅ Datos reales desde Supabase:
-   const clientes = await getClientes()
-   ```
-
-3. Agrega `'use client'` si el componente usa hooks, o conviértelo en Server Component si solo lee datos.
-
----
-
-## 📋 Fase 5 — Componentes clave a construir
-
-### KpiCard (para el dashboard)
-
-```typescript
-// /components/dashboard/KpiCard.tsx
-interface KpiCardProps {
-  titulo: string
-  valor: string | number
-  descripcion?: string
-  alerta?: boolean
-}
-
-export function KpiCard({ titulo, valor, descripcion, alerta }: KpiCardProps) {
-  return (
-    <div className={`rounded-lg border p-4 ${alerta ? 'border-red-300 bg-red-50' : 'bg-white'}`}>
-      <p className="text-sm text-muted-foreground">{titulo}</p>
-      <p className="text-2xl font-semibold mt-1">{valor}</p>
-      {descripcion && <p className="text-xs text-muted-foreground mt-1">{descripcion}</p>}
-    </div>
-  )
-}
-```
-
-### Alerta de stock crítico
-
-```typescript
-// /components/inventario/StockAlerta.tsx
-import { Inventario } from '@/types'
-
-export function StockAlerta({ items }: { items: Inventario[] }) {
-  if (items.length === 0) return null
-
-  return (
-    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-      <h3 className="font-medium text-red-800 mb-2">⚠️ Stock crítico ({items.length} productos)</h3>
-      <ul className="space-y-1">
-        {items.map(item => (
-          <li key={item.id} className="text-sm text-red-700">
-            {item.productos?.nombre} — {item.stock_disponible} unidades
-            (mínimo: {item.stock_minimo})
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-```
-
----
-
-## 🔁 Orden de desarrollo recomendado
-
-| #   | Paso                                     | Tiempo estimado |
-| --- | ---------------------------------------- | --------------- |
-| 1   | Schema SQL + datos de prueba en Supabase | 30 min          |
-| 2   | Setup Next.js + Supabase client + types  | 20 min          |
-| 3   | Layout (Sidebar + Header) con Stitch     | 30 min          |
-| 4   | Dashboard con KPIs reales                | 45 min          |
-| 5   | Módulo Inventario (tabla + alertas)      | 45 min          |
-| 6   | Módulo Clientes (tabla + CRUD básico)    | 1 h             |
-| 7   | Módulo Ventas (tabla + registro)         | 45 min          |
-| 8   | Módulo Proveedores + Órdenes             | 45 min          |
-| 9   | Módulo Movimientos                       | 30 min          |
-
----
-
-## 📝 Notas importantes
-
-- **Supabase RLS:** Para el prototipo puedes deshabilitar Row Level Security en todas las tablas. Antes de producción, actívalo.
-- **Server vs Client Components:** Usa Server Components para páginas que solo leen datos (sin useState). Usa `'use client'` solo cuando necesites interactividad.
-- **Stitch limitación:** Genera UI estática. Siempre valida que los nombres de props y clases de Tailwind sean compatibles con tu versión de shadcn.
-- **Stock crítico:** La query `stock_disponible < stock_minimo` en Supabase debe hacerse con `.lt()` sobre una columna, no comparando dos columnas. Usa la función SQL `productos_stock_critico()` creada arriba para eso.
-- **Recharts:** Para la gráfica de ventas instala `npm install recharts` y usa `<LineChart>` con datos agrupados por mes.
+| ID | Issue | Impact | Location |
+|---|---|---|---|
+| L1 | `public/` contains unused default Next.js SVGs (`next.svg`, `vercel.svg`, etc.). | Clutter. | `public/` |
+| L2 | `VentasPage` fetches `clientes` but does not pass to `VentasTable`. Table relies on join from query. | Inconsistent data flow. | `app/ventas/page.tsx` |
+| L3 | ClientesPage "Actividad Reciente" section is hardcoded to "Sin actividad reciente". | Dead UI section. | `app/clientes/page.tsx:91-93` |
+| L4 | Browser client singleton can become stale during HMR. | Potential dev-time bugs. | `lib/supabase-browser.ts:3` |
