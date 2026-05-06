@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Producto } from "@/types";
 
 export async function getProductos(): Promise<Producto[]> {

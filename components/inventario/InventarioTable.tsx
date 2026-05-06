@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,7 +63,7 @@ export function InventarioTable({
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [rows, setRows] = useState<Inventario[]>(inventario);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(openCreateInitially);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formState, setFormState] = useState<InventarioFormState>(initialFormState);
@@ -75,18 +75,8 @@ export function InventarioTable({
     [productos],
   );
 
-  useEffect(() => {
-    setRows(inventario);
-  }, [inventario]);
-
-  useEffect(() => {
-    if (!openCreateInitially) return;
-    setDialogMode("create");
-    setEditingId(null);
-    setFormState({ ...initialFormState, producto_id: productos[0]?.id ?? "" });
-    setErrorMessage(null);
-    setDialogOpen(true);
-  }, [openCreateInitially, productos]);
+  // Note: we intentionally don't mirror props into state; after a mutation we
+  // update local state and call router.refresh().
 
   function openCreateDialog() {
     setDialogMode("create");

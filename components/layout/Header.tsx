@@ -1,7 +1,10 @@
 "use client";
 
-import { Bell, HelpCircle, Search, Settings } from "lucide-react";
+import { Bell, HelpCircle, LogOut, Search, Settings } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
+
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 const titleMap: Record<string, string> = {
   "dashboard": "Dashboard",
@@ -11,6 +14,7 @@ const titleMap: Record<string, string> = {
   "inventario": "Inventario",
   "ventas": "Ventas",
   "movimientos": "Movimientos",
+  "login": "Acceso",
 };
 
 function getTitleFromPath(pathname: string) {
@@ -21,6 +25,18 @@ function getTitleFromPath(pathname: string) {
 export function Header() {
   const pathname = usePathname();
   const title = getTitleFromPath(pathname);
+  const router = useRouter();
+
+  const isLogin = pathname === "/login";
+
+  if (isLogin) return null;
+
+  async function handleLogout() {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <header className="fixed top-0 right-0 left-[260px] h-16 bg-white/80 backdrop-blur flex justify-between items-center px-6 z-40 border-b border-slate-200/60">
@@ -55,6 +71,15 @@ export function Header() {
           title="Ayuda"
         >
           <HelpCircle className="h-5 w-5" />
+        </button>
+        <button
+          className="text-slate-700 hover:bg-slate-100 p-2 rounded-full transition-colors"
+          title="Cerrar sesion"
+          onClick={() => {
+            void handleLogout();
+          }}
+        >
+          <LogOut className="h-5 w-5" />
         </button>
       </div>
     </header>
