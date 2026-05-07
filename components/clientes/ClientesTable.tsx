@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ChevronDown, Pencil, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,33 +52,25 @@ const initialFormState: ClienteFormState = {
 };
 
 export function ClientesTable({
-  clientes,
+  clientes: initialClientes,
   openCreateInitially = false,
 }: ClientesTableProps) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
-  const [rows, setRows] = useState<Cliente[]>(clientes);
+  const [rows, setRows] = useState<Cliente[]>(initialClientes);
   const [search, setSearch] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("todos");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(openCreateInitially);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formState, setFormState] = useState<ClienteFormState>(initialFormState);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    setRows(clientes);
-  }, [clientes]);
+  // Note: we intentionally don't mirror props into state; after a mutation we
+  // update local state and call router.refresh().
 
-  useEffect(() => {
-    if (!openCreateInitially) return;
-    setDialogMode("create");
-    setEditingId(null);
-    setFormState(initialFormState);
-    setErrorMessage(null);
-    setDialogOpen(true);
-  }, [openCreateInitially]);
+  // Open the create dialog on first render if requested.
 
   function openEditDialog(cliente: Cliente) {
     setDialogMode("edit");

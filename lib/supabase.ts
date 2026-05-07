@@ -1,3 +1,5 @@
+// Legacy (server-only) client factory.
+// Prefer `@/lib/supabase/server` for cookie-based auth in Server Components.
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";

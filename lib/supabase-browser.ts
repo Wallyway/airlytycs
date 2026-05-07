@@ -1,14 +1,10 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-let browserClient: SupabaseClient | null = null;
-
 export function createSupabaseBrowserClient() {
-  if (browserClient) return browserClient;
+  // Use cookie-based auth so Server Components + middleware can read sessions.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createBrowserClient } = require("@supabase/ssr") as typeof import("@supabase/ssr");
 
-  browserClient = createClient(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
   );
-
-  return browserClient;
 }

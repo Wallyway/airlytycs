@@ -12,7 +12,7 @@ import {
   Trash2,
   Wind,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -69,29 +69,15 @@ export function ProductosTable({
   const [rows, setRows] = useState<Producto[]>(productos);
   const [inventoryRows, setInventoryRows] = useState<Inventario[]>(inventario);
   const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(openCreateInitially);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<ProductoFormState>(initialFormState);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    setRows(productos);
-  }, [productos]);
-
-  useEffect(() => {
-    setInventoryRows(inventario);
-  }, [inventario]);
-
-  useEffect(() => {
-    if (!openCreateInitially) return;
-    setDialogMode("create");
-    setEditingId(null);
-    setFormState(initialFormState);
-    setErrorMessage(null);
-    setDialogOpen(true);
-  }, [openCreateInitially]);
+  // Note: we intentionally don't mirror props into state; after a mutation we
+  // update local state and call router.refresh().
 
   function openCreateDialog() {
     setDialogMode("create");

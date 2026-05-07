@@ -8,7 +8,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -121,7 +121,7 @@ export function ProveedoresTable({
   const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
   const [cumplimientoFiltro, setCumplimientoFiltro] = useState("todos");
   const [currentPage, setCurrentPage] = useState(1);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(openCreateInitially);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formState, setFormState] = useState<ProveedorFormState>(initialFormState);
@@ -129,18 +129,8 @@ export function ProveedoresTable({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const itemsPerPage = 8;
 
-  useEffect(() => {
-    setRows(proveedores);
-  }, [proveedores]);
-
-  useEffect(() => {
-    if (!openCreateInitially) return;
-    setDialogMode("create");
-    setEditingId(null);
-    setFormState(initialFormState);
-    setErrorMessage(null);
-    setDialogOpen(true);
-  }, [openCreateInitially]);
+  // Note: we intentionally don't mirror props into state; after a mutation we
+  // update local state and call router.refresh().
 
   function openCreateDialog() {
     setDialogMode("create");
