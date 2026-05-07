@@ -2,17 +2,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, ShieldAlert } from "lucide-react";
+import { Shield } from "lucide-react";
+import { toast } from "sonner";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type Mode = "login" | "register";
+type Mode = "login" | "root";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -20,18 +20,21 @@ function normalizeEmail(email: string) {
 
 export function LoginCard({
   initialReason = null,
+  initialRootMode = false,
 }: {
   initialReason?: string | null;
+  initialRootMode?: boolean;
 }) {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>(initialRootMode ? "root" : "login");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [rootEmail, setRootEmail] = useState("");
+  const [rootPassword, setRootPassword] = useState("");
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const initialBanner =
@@ -40,27 +43,24 @@ export function LoginCard({
       : null;
 
   async function handleLogin() {
-    setErrorMessage(null);
-    setInfoMessage(null);
-
-    const normalizedEmail = normalizeEmail(email);
+    const normalizedEmail = normalizeEmail(loginEmail);
     if (!normalizedEmail) {
-      setErrorMessage("Ingresa tu correo.");
+      toast.error("Ingresa tu correo.");
       return;
     }
 
-    if (!password) {
-      setErrorMessage("Ingresa tu contrasena.");
+    if (!loginPassword) {
+      toast.error("Ingresa tu contrasena.");
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
-      password,
+      password: loginPassword,
     });
 
     if (error) {
-      setErrorMessage(error.message);
+      toast.error(error.message);
       return;
     }
 
@@ -70,79 +70,66 @@ export function LoginCard({
     });
   }
 
-  async function handleRegister() {
-    setErrorMessage(null);
-    setInfoMessage(null);
+  async function handleRootCreate() {
+    const normalizedRootEmail = normalizeEmail(rootEmail);
+    if (!normalizedRootEmail) {
+      toast.error("Ingresa el correo del administrador raíz.");
+      return;
+    }
 
-    const normalizedEmail = normalizeEmail(email);
+    if (!rootPassword) {
+      toast.error("Ingresa la contraseña del administrador raíz.");
+      return;
+    }
+
+    const normalizedEmail = normalizeEmail(newAdminEmail);
     if (!normalizedEmail) {
-      setErrorMessage("Ingresa tu correo.");
+      toast.error("Ingresa el correo del nuevo admin.");
       return;
     }
 
-    if (!password) {
-      setErrorMessage("Ingresa tu contrasena.");
+    if (!newAdminPassword) {
+      toast.error("Ingresa la contraseña del nuevo admin.");
       return;
     }
 
-    if (password.length < 12) {
-      setErrorMessage("Usa una contrasena de al menos 12 caracteres.");
+    if (newAdminPassword.length < 12) {
+      toast.error("Usa una contrasena de al menos 12 caracteres.");
       return;
     }
 
-    if (password !== confirmPassword) {
-      setErrorMessage("Las contrasenas no coinciden.");
-      return;
-    }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
+    const response = await fetch("/api/admin/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rootEmail: normalizedRootEmail,
+        rootPassword,
+        email: normalizedEmail,
+        password: newAdminPassword,
+      }),
     });
+    let payload: { error?: string; confirmationRequired?: boolean } | null = null;
 
-    if (error) {
-      setErrorMessage(error.message);
+    try {
+      payload = (await response.json()) as {
+        error?: string;
+        confirmationRequired?: boolean;
+      };
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      toast.error(payload?.error ?? "No se pudo crear el admin.");
       return;
     }
 
-    if (!data.user) {
-      setErrorMessage("No se pudo crear el usuario.");
-      return;
+    if (payload?.confirmationRequired) {
+      toast.success("Invitación enviada. El nuevo admin debe crear su contraseña.");
+    } else {
+      toast.success("Administrador creado. Puede ingresar de inmediato.");
     }
-
-    // If email confirmation is enabled in Supabase, signUp may not create a session.
-    // Without a session, claiming admin (RLS: auth.uid()) will fail.
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      setErrorMessage(
-        "Tu cuenta fue creada, pero no hay sesion activa (parece que la confirmacion por email esta habilitada en Supabase). Desactiva 'Confirm email' en Auth -> Providers -> Email y vuelve a registrarte.",
-      );
-      return;
-    }
-
-    // Claim the single admin seat (DB policy enforces: first insert only).
-    const { error: adminError } = await supabase
-      .from("admins")
-      .insert({ id: data.user.id })
-      .select("id")
-      .single();
-
-    if (adminError) {
-      // Important: avoid leaving a newly created non-admin account with access.
-      // This app is single-admin; we immediately sign out and tell the user.
-      await supabase.auth.signOut();
-      setErrorMessage(
-        "Este sistema solo permite un administrador. Ya existe un admin.",
-      );
-      return;
-    }
-
-    setInfoMessage("Administrador creado. Accediendo...");
-
-    startTransition(() => {
-      router.replace("/dashboard");
-      router.refresh();
-    });
   }
 
   return (
@@ -167,86 +154,89 @@ export function LoginCard({
 
       <CardContent className="space-y-4">
         {initialBanner ? (
-          <Alert>
-            <AlertTitle>Acceso restringido</AlertTitle>
-            <AlertDescription>{initialBanner}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {errorMessage ? (
-          <Alert variant="destructive">
-            <ShieldAlert className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{errorMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {infoMessage ? (
-          <Alert>
-            <AlertTitle>Listo</AlertTitle>
-            <AlertDescription>{infoMessage}</AlertDescription>
-          </Alert>
+          <div className="rounded-lg border border-border bg-popover px-4 py-3 text-sm text-muted-foreground">
+            {initialBanner}
+          </div>
         ) : null}
 
         <Tabs
           value={mode}
-          onValueChange={(v) => {
-            setErrorMessage(null);
-            setInfoMessage(null);
-            setMode(v as Mode);
-          }}
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Ingresar</TabsTrigger>
-            <TabsTrigger value="register">Registrar</TabsTrigger>
-          </TabsList>
+            onValueChange={(v) => {
+              setMode(v as Mode);
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="login">Ingresar</TabsTrigger>
+              <TabsTrigger value="root">¿Eres root?</TabsTrigger>
+            </TabsList>
 
-          <div className="pt-4 space-y-3">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="email">
-                Correo
-              </label>
-              <Input
-                id="email"
-                autoComplete="email"
-                inputMode="email"
-                placeholder="admin@empresa.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
+            <div className="pt-4 space-y-3">
 
-            <div className="space-y-2">
-              <label
-                className="text-sm font-medium text-slate-700"
-                htmlFor="password"
-              >
-                Contrasena
-              </label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                placeholder={mode === "register" ? "Minimo 12 caracteres" : ""}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-
-            <TabsContent value="register" className="m-0 space-y-3">
+            <TabsContent value="root" className="m-0 space-y-3">
               <div className="space-y-2">
                 <label
                   className="text-sm font-medium text-slate-700"
-                  htmlFor="confirmPassword"
+                  htmlFor="rootEmail"
                 >
-                  Confirmar contrasena
+                  Correo de root
                 </label>
                 <Input
-                  id="confirmPassword"
+                  id="rootEmail"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="root@empresa.com"
+                  value={rootEmail}
+                  onChange={(e) => setRootEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-slate-700"
+                  htmlFor="rootPassword"
+                >
+                  Contrasena de root
+                </label>
+                <Input
+                  id="rootPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  value={rootPassword}
+                  onChange={(e) => setRootPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-slate-700"
+                  htmlFor="newAdminEmail"
+                >
+                  Correo del nuevo admin
+                </label>
+                <Input
+                  id="newAdminEmail"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="nuevo-admin@empresa.com"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-slate-700"
+                  htmlFor="newAdminPassword"
+                >
+                  Contrasena del nuevo admin
+                </label>
+                <Input
+                  id="newAdminPassword"
                   type="password"
                   autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Minimo 12 caracteres"
+                  value={newAdminPassword}
+                  onChange={(e) => setNewAdminPassword(e.target.value)}
                 />
               </div>
 
@@ -254,19 +244,48 @@ export function LoginCard({
                 className="w-full"
                 disabled={isPending}
                 onClick={() => {
-                  void handleRegister();
+                  void handleRootCreate();
                 }}
               >
-                Crear admin
+                Crear nuevo admin
               </Button>
 
               <div className="text-xs text-slate-500">
-                Este registro solo funciona una vez. El primer usuario creado sera el
-                administrador.
+                Solo el usuario root puede crear nuevos administradores.
               </div>
             </TabsContent>
 
             <TabsContent value="login" className="m-0 space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700" htmlFor="email">
+                  Correo
+                </label>
+                <Input
+                  id="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="admin@empresa.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-slate-700"
+                  htmlFor="password"
+                >
+                  Contrasena
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                />
+              </div>
+
               <Button
                 className="w-full"
                 disabled={isPending}
@@ -280,7 +299,7 @@ export function LoginCard({
               <Separator />
 
               <div className="text-xs text-slate-500">
-                Si ya existe un admin, usa tus credenciales para ingresar.
+                Si eres root, usa el acceso especial para crear nuevos admins.
               </div>
             </TabsContent>
           </div>

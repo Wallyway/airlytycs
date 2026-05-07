@@ -11,8 +11,11 @@ export default async function ProtectedLayout({
 
   if (error || !data.user) redirect("/login");
 
-  const { data: isAdmin, error: isAdminError } = await supabase.rpc("is_admin");
-  if (isAdminError || !isAdmin) redirect("/login?reason=not_admin");
+  const role = data.user.app_metadata?.role;
+  if (role !== "admin" && role !== "root") {
+    await supabase.auth.signOut();
+    redirect("/login?reason=not_admin");
+  }
 
   return children;
 }
