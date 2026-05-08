@@ -23,7 +23,7 @@
       "type": "local",
       "command": ["npx", "@testsprite/testsprite-mcp@latest"],
       "environment": {
-        "API_KEY": "${TESTSPRITE_API_KEY}",
+        "API_KEY": "{file:testsprite-key}",
        }
      },
 

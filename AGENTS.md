@@ -123,7 +123,7 @@ dashboard-medico/
 │   └── index.ts                  # All TypeScript interfaces (single file, 59 lines)
 │
 ├── public/                       # Unused default Next.js SVGs
-├── .env.local                    # NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+├── .env                   # NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ├── components.json               # shadcn config (radix-nova style, CSS variables)
 ├── next.config.ts                # Empty default config
 ├── tsconfig.json                 # Strict, ES2017 target, @/* alias
