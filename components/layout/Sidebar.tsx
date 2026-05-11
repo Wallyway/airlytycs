@@ -25,7 +25,10 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
 
-  if (pathname === "/login") return null;
+  if (!pathname) return null;
+  if (pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/cliente")) {
+    return null;
+  }
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-[260px] bg-[#1a2233] flex flex-col py-6 shadow-xl z-50">

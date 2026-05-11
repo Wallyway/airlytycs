@@ -6,13 +6,14 @@ import { Shield } from "lucide-react";
 import { toast } from "sonner";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { signInDemo } from "@/lib/demoAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type Mode = "login" | "root";
+type Mode = "admin" | "client" | "root";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -28,9 +29,11 @@ export function LoginCard({
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  const [mode, setMode] = useState<Mode>(initialRootMode ? "root" : "login");
+  const [mode, setMode] = useState<Mode>(initialRootMode ? "root" : "admin");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPassword, setClientPassword] = useState("");
   const [rootEmail, setRootEmail] = useState("");
   const [rootPassword, setRootPassword] = useState("");
   const [newAdminEmail, setNewAdminEmail] = useState("");
@@ -43,20 +46,24 @@ export function LoginCard({
       : null;
 
   async function handleLogin() {
-    const normalizedEmail = normalizeEmail(loginEmail);
+    const isClient = mode === "client";
+    const emailToUse = isClient ? clientEmail : loginEmail;
+    const passwordToUse = isClient ? clientPassword : loginPassword;
+
+    const normalizedEmail = normalizeEmail(emailToUse);
     if (!normalizedEmail) {
       toast.error("Ingresa tu correo.");
       return;
     }
 
-    if (!loginPassword) {
+    if (!passwordToUse) {
       toast.error("Ingresa tu contrasena.");
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
-      password: loginPassword,
+      password: passwordToUse,
     });
 
     if (error) {
@@ -65,7 +72,11 @@ export function LoginCard({
     }
 
     startTransition(() => {
-      router.replace("/dashboard");
+      if (isClient) {
+        router.replace("/cliente");
+      } else {
+        router.replace("/dashboard");
+      }
       router.refresh();
     });
   }
@@ -136,18 +147,12 @@ export function LoginCard({
     <Card className="w-full max-w-[460px] shadow-sm">
       <CardHeader className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-lg bg-slate-900 text-white grid place-items-center">
-              <Shield className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle className="font-heading text-slate-900">
-                Acceso Administrador
-              </CardTitle>
-              <p className="text-sm text-slate-600">
-                Inicio de sesion y registro del primer admin.
-              </p>
-            </div>
+          <div className="h-10 w-10 rounded-lg bg-slate-900 text-white grid place-items-center">
+            <Shield className="h-5 w-5" />
+          </div>
+          <div>
+            <CardTitle className="font-heading text-slate-900">Acceso</CardTitle>
+            <p className="text-sm text-slate-600">Selecciona Admin o Cliente para iniciar sesión.</p>
           </div>
         </div>
       </CardHeader>
@@ -159,18 +164,14 @@ export function LoginCard({
           </div>
         ) : null}
 
-        <Tabs
-          value={mode}
-            onValueChange={(v) => {
-              setMode(v as Mode);
-            }}
-          >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Ingresar</TabsTrigger>
-              <TabsTrigger value="root">¿Eres root?</TabsTrigger>
-            </TabsList>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="admin">Admin</TabsTrigger>
+            <TabsTrigger value="client">Cliente</TabsTrigger>
+            <TabsTrigger value="root">¿Eres root?</TabsTrigger>
+          </TabsList>
 
-            <div className="pt-4 space-y-3">
+          <div className="pt-4 space-y-3">
 
             <TabsContent value="root" className="m-0 space-y-3">
               <div className="space-y-2">
@@ -255,7 +256,7 @@ export function LoginCard({
               </div>
             </TabsContent>
 
-            <TabsContent value="login" className="m-0 space-y-3">
+            <TabsContent value="admin" className="m-0 space-y-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700" htmlFor="email">
                   Correo
@@ -271,10 +272,7 @@ export function LoginCard({
               </div>
 
               <div className="space-y-2">
-                <label
-                  className="text-sm font-medium text-slate-700"
-                  htmlFor="password"
-                >
+                <label className="text-sm font-medium text-slate-700" htmlFor="password">
                   Contrasena
                 </label>
                 <Input
@@ -286,20 +284,63 @@ export function LoginCard({
                 />
               </div>
 
-              <Button
-                className="w-full"
-                disabled={isPending}
-                onClick={() => {
-                  void handleLogin();
-                }}
-              >
+              <Button className="w-full" disabled={isPending} onClick={() => void handleLogin()}>
                 Ingresar
               </Button>
 
               <Separator />
 
-              <div className="text-xs text-slate-500">
-                Si eres root, usa el acceso especial para crear nuevos admins.
+              <div className="text-xs text-slate-500">Si eres root, usa el acceso especial para crear nuevos admins.</div>
+            </TabsContent>
+
+            <TabsContent value="client" className="m-0 space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700" htmlFor="clientEmail">
+                  Correo
+                </label>
+                <Input
+                  id="clientEmail"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="cliente@correo.com"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700" htmlFor="clientPassword">
+                  Contrasena
+                </label>
+                <Input
+                  id="clientPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  value={clientPassword}
+                  onChange={(e) => setClientPassword(e.target.value)}
+                />
+              </div>
+
+              <Button className="w-full" disabled={isPending} onClick={() => void handleLogin()}>
+                Ingresar como cliente
+              </Button>
+
+              <div className="pt-2">
+                <Button variant="outline" className="w-full" onClick={() => {
+                  signInDemo();
+                  router.replace("/cliente");
+                }}>
+                  Iniciar demo (cliente)
+                </Button>
+              </div>
+
+              <div className="pt-2 text-center">
+                <button
+                  className="text-sm text-sky-600 hover:underline"
+                  onClick={() => router.push("/signup")}
+                >
+                  Crear cuenta nueva
+                </button>
               </div>
             </TabsContent>
           </div>

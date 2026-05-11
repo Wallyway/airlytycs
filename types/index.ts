@@ -23,6 +23,9 @@ export interface Producto {
   nombre: string;
   modelo: string | null;
   descripcion: string | null;
+  precio?: number | null;
+  imagen_url?: string | null;
+  categoria?: string | null;
 }
 
 export interface Venta {

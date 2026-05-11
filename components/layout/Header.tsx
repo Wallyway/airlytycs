@@ -27,9 +27,10 @@ export function Header() {
   const title = getTitleFromPath(pathname);
   const router = useRouter();
 
-  const isLogin = pathname === "/login";
-
-  if (isLogin) return null;
+  if (!pathname) return null;
+  if (pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/cliente")) {
+    return null;
+  }
 
   async function handleLogout() {
     const supabase = createSupabaseBrowserClient();

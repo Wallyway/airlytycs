@@ -16,6 +16,8 @@ export default async function LoginPage({
   if (data.user && !allowRootFlow) {
     const role = data.user.app_metadata?.role;
     if (role === "admin" || role === "root") redirect("/dashboard");
+    // Do not auto-redirect non-admin users from the login page.
+    // Clients should sign in via the client tab which will redirect them to /cliente.
   }
 
   return (

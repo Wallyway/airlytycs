@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/layout/Sidebar";
 
 export default async function ProtectedLayout({
   children,
@@ -17,5 +19,11 @@ export default async function ProtectedLayout({
     redirect("/login?reason=not_admin");
   }
 
-  return children;
+  return (
+    <>
+      <Sidebar />
+      <Header />
+      {children}
+    </>
+  );
 }

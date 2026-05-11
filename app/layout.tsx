@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Manrope } from "next/font/google";
 import "./globals.css";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({
@@ -32,8 +30,6 @@ export default function RootLayout({
       className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="min-h-screen bg-slate-50">
-        <Sidebar />
-        <Header />
         {children}
         <Toaster />
       </body>
