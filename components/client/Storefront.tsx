@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Package, Activity, Wind } from "lucide-react";
 import { addItemToCart } from "@/lib/clientCart";
 import type { Inventario, Producto } from "@/types";
 import {
@@ -13,6 +14,7 @@ import {
   getProductPriceLabel,
   getSearchBlob,
   isBlockedClientProduct,
+  matchesCategory,
 } from "@/lib/storefront-utils";
 
 export default function Storefront({
@@ -31,6 +33,16 @@ export default function Storefront({
     return new Map(inventario.map((item) => [item.producto_id, item]));
   }, [inventario]);
 
+  const iconStyles = [
+    { className: "bg-blue-50 text-blue-600", icon: Package },
+    { className: "bg-orange-50 text-orange-600", icon: Activity },
+    { className: "bg-emerald-50 text-emerald-600", icon: Wind },
+  ];
+
+  function getIconStyle(index: number) {
+    return iconStyles[index] ?? { className: "bg-slate-50 text-slate-600", icon: Package };
+  }
+
   function addToCart(id: string) {
     addItemToCart(id);
     toast.success("Añadido al carrito");
@@ -38,7 +50,8 @@ export default function Storefront({
 
   const filtered = productos.filter((p) => {
     const byQuery = query ? getSearchBlob(p).includes(query.toLowerCase()) : true;
-    return byQuery && !isBlockedClientProduct(p);
+    const byCategory = category === "all" ? true : matchesCategory(p, category);
+    return byQuery && byCategory && !isBlockedClientProduct(p);
   });
 
   return (
@@ -64,10 +77,34 @@ export default function Storefront({
                 onChange={(e) => setQuery(e.target.value)}
               />
               <div className="flex flex-wrap gap-2 text-xs text-white/80">
-                <span className="rounded-full bg-white/10 px-3 py-1">Todos los equipos</span>
-                <span className="rounded-full bg-white/10 px-3 py-1">Monitores</span>
-                <span className="rounded-full bg-white/10 px-3 py-1">Ventiladores</span>
-                <span className="rounded-full bg-white/10 px-3 py-1">Diagnóstico</span>
+                <button
+                  type="button"
+                  onClick={() => setCategory("all")}
+                  className={`rounded-full px-3 py-1 ${category === "all" ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20"}`}
+                >
+                  Todos los equipos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategory("monitor")}
+                  className={`rounded-full px-3 py-1 ${category === "monitor" ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20"}`}
+                >
+                  Monitores
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategory("ventilador")}
+                  className={`rounded-full px-3 py-1 ${category === "ventilador" ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20"}`}
+                >
+                  Ventiladores
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategory("desfibrilador")}
+                  className={`rounded-full px-3 py-1 ${category === "desfibrilador" ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20"}`}
+                >
+                  Diagnóstico
+                </button>
               </div>
             </div>
           </div>
